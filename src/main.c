@@ -5,6 +5,11 @@
 #include <SDL_stdinc.h>
 #include "font.h"
 
+enum edit_state {
+  STATE_DEFAULT,
+  STATE_EDIT,
+};
+
 static struct {
   SDL_Window *mainwin;
   SDL_Renderer *renderer;
@@ -16,6 +21,23 @@ static struct {
     int y;
   } pos;
   SDL_RendererInfo ri;
+  char inputbuf[3];
+  enum edit_state state;
+  struct {
+    int alg;
+    int fbl;
+    struct {
+      int ar;
+      int dr;
+      int sr;
+      int rr;
+      int sl;
+      int tl;
+      int ks;
+      int ml;
+      int dt;
+    } slot[4];
+  } param;
 } g;
 
 static void conv_font_raw(void) {
@@ -66,23 +88,27 @@ err:
   return false;
 }
 
-void cmvputsr(bool color, int y, int x, const char *text) {
+static void cmvputchr(bool color, int y, int x, char c) {
+  if (c < 0x20 || c >= 0x80) return;
   SDL_Rect srcrect = {
-    0, 0, 8, 16
+    0, (c-0x20)*16, 8, 16
   };
   SDL_Rect dstrect = {
     x*8, y*16, 8, 16
   };
   SDL_Texture *tex = color ? g.fonttex_neg : g.fonttex;
+  SDL_RenderCopy(g.renderer, tex, &srcrect, &dstrect);
+}
+
+static void cmvputsr(bool color, int y, int x, const char *text) {
   while (*text) {
-    srcrect.y = ((*text)-0x20)*16;
-    SDL_RenderCopy(g.renderer, tex, &srcrect, &dstrect);
-    dstrect.x += 8;
+    cmvputchr(color, y, x, *text);
+    x++;
     text++;
   }
 }
 
-void cmvprintr(bool color, int y, int x, const char *format, ...) {
+static void cmvprintr(bool color, int y, int x, const char *format, ...) {
   char buf[81] = {0};
   va_list args;
   va_start(args, format);
@@ -91,7 +117,93 @@ void cmvprintr(bool color, int y, int x, const char *format, ...) {
   cmvputsr(color, y, x, buf);
 }
 
-static void render() {
+static int getval(void) {
+  if (g.pos.y == 0) {
+    if (g.pos.x == 1) return g.param.alg;
+    if (g.pos.x == 2) return g.param.fbl;
+  } else {
+    if (g.pos.x == 0) return g.param.slot[g.pos.y-1].ar;
+    if (g.pos.x == 1) return g.param.slot[g.pos.y-1].dr;
+    if (g.pos.x == 2) return g.param.slot[g.pos.y-1].sr;
+    if (g.pos.x == 3) return g.param.slot[g.pos.y-1].rr;
+    if (g.pos.x == 4) return g.param.slot[g.pos.y-1].sl;
+    if (g.pos.x == 5) return g.param.slot[g.pos.y-1].tl;
+    if (g.pos.x == 6) return g.param.slot[g.pos.y-1].ks;
+    if (g.pos.x == 7) return g.param.slot[g.pos.y-1].ml;
+    if (g.pos.x == 8) return g.param.slot[g.pos.y-1].dt;
+  }
+  return 0;
+}
+
+#define R(max) \
+  do { \
+    if (v > max) { \
+      v = max; \
+    } \
+  } while (0)
+
+static void setval(int v) {
+  if (v < 0) v = 0;
+  if (g.pos.y == 0) {
+    if (g.pos.x == 1) {
+      R(7);
+      g.param.alg = v;
+    }
+    if (g.pos.x == 2) {
+      R(7);
+      g.param.fbl = v;
+    }
+  } else {
+    if (g.pos.x == 0) {
+      R(31);
+      g.param.slot[g.pos.y-1].ar = v;
+    }
+    if (g.pos.x == 1) {
+      R(31);
+      g.param.slot[g.pos.y-1].dr = v;
+    }
+    if (g.pos.x == 2) {
+      R(31);
+      g.param.slot[g.pos.y-1].sr = v;
+    }
+    if (g.pos.x == 3) {
+      R(15);
+      g.param.slot[g.pos.y-1].rr = v;
+    }
+    if (g.pos.x == 4) {
+      R(15);
+      g.param.slot[g.pos.y-1].sl = v;
+    }
+    if (g.pos.x == 5) {
+      R(127);
+      g.param.slot[g.pos.y-1].tl = v;
+    }
+    if (g.pos.x == 6) {
+      R(3);
+      g.param.slot[g.pos.y-1].ks = v;
+    }
+    if (g.pos.x == 7) {
+      R(15);
+      g.param.slot[g.pos.y-1].ml = v;
+    }
+    if (g.pos.x == 8) {
+      R(7);
+      g.param.slot[g.pos.y-1].dt = v;
+    }
+  }
+}
+
+#undef R
+
+static void parse(void) {
+  int v = 0;
+  if (g.inputbuf[0] != ' ') v += (g.inputbuf[0]-'0')*100;
+  if (g.inputbuf[1] != ' ') v += (g.inputbuf[1]-'0')*10;
+  if (g.inputbuf[2] != ' ') v += (g.inputbuf[2]-'0')*1;
+  setval(v);
+}
+
+static void render(void) {
   SDL_RenderClear(g.renderer);
   cmvprintr(false, 0,  0, "[[[ PMD Voice Editor ver.0.1 ]]] / Programmed by T.Horikawa 2016.08.05");
   cmvprintr(false, 1,  0, "Renderer: %s", g.ri.name);
@@ -104,14 +216,230 @@ static void render() {
     cmvprintr(false, 7+i, 0, "slot%d", i);
   }
   for (int x = 0; x < 3; x++) {
-    cmvprintr(false, 5, 6+4*x, "%03d", x);
+    bool current = x == g.pos.x && 0 == g.pos.y;
+    if (g.state == STATE_EDIT && current) {
+      for (int i = 0; i < 3; i++) {
+        cmvputchr(i == 2, 5, 6+4*x+i, g.inputbuf[i]);
+      }
+    } else {
+      int v = 0;
+      if (x == 1) v = g.param.alg;
+      if (x == 2) v = g.param.fbl;
+      cmvprintr(current, 5, 6+4*x, "%03d", v);
+    }
   }
   for (int y = 0; y < 4; y++) {
     for (int x = 0; x < 9; x++) {
-      cmvprintr(x == g.pos.x && y == g.pos.y, 7+y, 6+4*x, "%03d", y*9+x);
+      bool current = x == g.pos.x && (y+1) == g.pos.y;
+      if (g.state == STATE_EDIT && current) {
+        for (int i = 0; i < 3; i++) {
+          cmvputchr(i == 2, 7+y, 6+4*x+i, g.inputbuf[i]);
+        }
+      } else {
+        int v;
+        if (x == 0) v = g.param.slot[y].ar;
+        if (x == 1) v = g.param.slot[y].dr;
+        if (x == 2) v = g.param.slot[y].sr;
+        if (x == 3) v = g.param.slot[y].rr;
+        if (x == 4) v = g.param.slot[y].sl;
+        if (x == 5) v = g.param.slot[y].tl;
+        if (x == 6) v = g.param.slot[y].ks;
+        if (x == 7) v = g.param.slot[y].ml;
+        if (x == 8) v = g.param.slot[y].dt;
+        cmvprintr(current, 7+y, 6+4*x, "%03d", v);
+      }
     }
   }
   SDL_RenderPresent(g.renderer);
+}
+
+static void handle_key(const SDL_KeyboardEvent *ke) {
+  if (g.state == STATE_DEFAULT) {
+    if (ke->state == SDL_PRESSED) {
+      switch (ke->keysym.sym) {
+      case SDLK_0:
+      case SDLK_1:
+      case SDLK_2:
+      case SDLK_3:
+      case SDLK_4:
+      case SDLK_5:
+      case SDLK_6:
+      case SDLK_7:
+      case SDLK_8:
+      case SDLK_9:
+        g.state = STATE_EDIT;
+        g.inputbuf[0] = ' ';
+        g.inputbuf[1] = ' ';
+        g.inputbuf[2] = ' ';
+        break;
+      case SDLK_ESCAPE:
+        {
+          SDL_Event e = {0};
+          e.type = SDL_QUIT;
+          SDL_PushEvent(&e);
+        }
+        break;
+      case SDLK_PAGEUP:
+        setval(getval()+1);
+        render();
+        break;
+      case SDLK_PAGEDOWN:
+        setval(getval()-1);
+        render();
+        break;
+      default:
+        break;
+      }
+    }
+  }
+  if (g.state == STATE_EDIT) {
+    if (ke->state == SDL_PRESSED) {
+      switch (ke->keysym.sym) {
+      case SDLK_0:
+      case SDLK_1:
+      case SDLK_2:
+      case SDLK_3:
+      case SDLK_4:
+      case SDLK_5:
+      case SDLK_6:
+      case SDLK_7:
+      case SDLK_8:
+      case SDLK_9:
+        if (g.inputbuf[0] == ' ') {
+          g.inputbuf[0] = g.inputbuf[1];
+          g.inputbuf[1] = g.inputbuf[2];
+          switch (ke->keysym.sym) {
+            case SDLK_0:
+              g.inputbuf[2] = '0';
+              break;
+            case SDLK_1:
+              g.inputbuf[2] = '1';
+              break;
+            case SDLK_2:
+              g.inputbuf[2] = '2';
+              break;
+            case SDLK_3:
+              g.inputbuf[2] = '3';
+              break;
+            case SDLK_4:
+              g.inputbuf[2] = '4';
+              break;
+            case SDLK_5:
+              g.inputbuf[2] = '5';
+              break;
+            case SDLK_6:
+              g.inputbuf[2] = '6';
+              break;
+            case SDLK_7:
+              g.inputbuf[2] = '7';
+              break;
+            case SDLK_8:
+              g.inputbuf[2] = '8';
+              break;
+            case SDLK_9:
+              g.inputbuf[2] = '9';
+              break;
+          }
+          render();
+        }
+        break;
+      case SDLK_BACKSPACE:
+        g.inputbuf[2] = g.inputbuf[1];
+        g.inputbuf[1] = g.inputbuf[0];
+        g.inputbuf[0] = ' ';
+        render();
+        break;
+      case SDLK_DOWN:
+      case SDLK_RETURN:
+      case SDLK_RETURN2:
+      case SDLK_UP:
+      case SDLK_RIGHT:
+      case SDLK_TAB:
+      case SDLK_LEFT:
+        g.state = STATE_DEFAULT;
+        parse();
+        break;
+      case SDLK_ESCAPE:
+        g.state = STATE_DEFAULT;
+        render();
+        break;
+      default:
+        break;
+      }
+    }
+  }
+  if (ke->state == SDL_PRESSED) {
+    SDL_Keycode sym = ke->keysym.sym;
+    // Reverse if shift key pressed
+    if (ke->keysym.mod & KMOD_SHIFT) {
+      switch (sym) {
+      case SDLK_RETURN:
+      case SDLK_RETURN2:
+        sym = SDLK_UP;
+        break;
+      case SDLK_TAB:
+        sym = SDLK_LEFT;
+        break;
+      default:
+        break;
+      }
+    }
+
+    switch (sym) {
+    case SDLK_DOWN:
+    case SDLK_RETURN:
+    case SDLK_RETURN2:
+      g.pos.y++;
+      if (g.pos.y > 4) g.pos.y = 4;
+      render();
+      return;
+    case SDLK_UP:
+      g.pos.y--;
+      if (g.pos.y == 0) {
+        if (g.pos.x > 2) g.pos.x = 2;
+      }
+      if (g.pos.y < 0) g.pos.y = 0;
+      render();
+      return;
+    case SDLK_RIGHT:
+    case SDLK_TAB:
+      g.pos.x++;
+      if (g.pos.y == 0) {
+        if (g.pos.x > 2) {
+          g.pos.y = 1;
+          g.pos.x = 0;
+        }
+      } else if (g.pos.y < 4) {
+        if (g.pos.x > 8) {
+          g.pos.y++;
+          g.pos.x = 0;
+        }
+      } else {
+        if (g.pos.x > 8) {
+          g.pos.x = 8;
+        }
+      }
+      render();
+      return;
+    case SDLK_LEFT:
+      g.pos.x--;
+      if (g.pos.x < 0) {
+        if (g.pos.y == 0) {
+          g.pos.x = 0;
+        } else if (g.pos.y == 1) {
+          g.pos.y = 0;
+          g.pos.x = 2;
+        } else {
+          g.pos.y--;
+          g.pos.x = 8;
+        }
+      }
+      render();
+      return;
+    default:
+      break;
+    }
+  }
 }
 
 int main(int argc, char **argv) {
@@ -170,7 +498,8 @@ int main(int argc, char **argv) {
     case SDL_QUIT:
       goto err_mainwin;
     case SDL_KEYDOWN:
-      if (e.key.keysym.scancode == SDL_SCANCODE_ESCAPE) goto err_mainwin;
+    case SDL_KEYUP:
+      handle_key(&e.key);
       break;
     case SDL_WINDOWEVENT:
       switch (e.window.event) {
