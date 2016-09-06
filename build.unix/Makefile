@@ -1,7 +1,7 @@
 vpath %.c ../src
 
 TARGET=opnatest
-OBJS=main.o
+OBJS=main.o opnafm.o
 
 SDLCONFIG=sdl2-config
 CFLAGS=-Wall -Wextra -Og -g $(shell $(SDLCONFIG) --cflags)

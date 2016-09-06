@@ -4,10 +4,26 @@
 #include <SDL.h>
 #include <SDL_stdinc.h>
 #include "font.h"
+#include "opnafm.h"
 
 enum edit_state {
   STATE_DEFAULT,
   STATE_EDIT,
+};
+
+static const uint16_t fnumtable_fmp[] = {
+  0x026a, // c
+  0x028f, // c+
+  0x02b6, // d
+  0x02df, // d+
+  0x030b, // e
+  0x0339, // f
+  0x036a, // f+
+  0x039e, // g
+  0x03d5, // g+
+  0x0410, // a
+  0x044e, // a+
+  0x048f, // b
 };
 
 static struct {
@@ -15,6 +31,7 @@ static struct {
   SDL_Renderer *renderer;
   SDL_Texture *fonttex;
   SDL_Texture *fonttex_neg;
+  SDL_AudioDeviceID ad;
   uint8_t fontbuf[8*16*(16*6)];
   struct {
     int x;
@@ -38,6 +55,15 @@ static struct {
       int dt;
     } slot[4];
   } param;
+  uint8_t env_div3;
+
+#define FM_CHAN_NUM 6
+  struct {
+    struct fm_channel chan;
+    bool keyon;
+    SDL_Scancode scancode;
+  } fmchan[FM_CHAN_NUM];
+  int next_chan;
 } g;
 
 static void conv_font_raw(void) {
@@ -86,6 +112,48 @@ err_surf:
   SDL_FreeSurface(fontsurf);
 err:
   return false;
+}
+
+static void audiocb(void *userdata, Uint8 *stream, int len) {
+  (void)userdata;
+  int frames = len/2;
+  uint16_t *out = (uint16_t *)stream;
+  for (int i = 0; i < frames; i++) {
+    if (!g.env_div3) {
+      for (int c = 0; c < FM_CHAN_NUM; c++) {
+        fm_chanenv(&g.fmchan[c].chan);
+      }
+      g.env_div3 = 3;
+    }
+    g.env_div3--;
+    int32_t sample = 0;
+    for (int c = 0; c < FM_CHAN_NUM; c++) {
+      sample += fm_chanout(&g.fmchan[c].chan);
+      fm_chanphase(&g.fmchan[c].chan);
+    }
+    sample /= 2;
+    if (sample > INT16_MAX) sample = INT16_MAX;
+    if (sample < INT16_MIN) sample = INT16_MIN;
+    out[i] = sample;
+  }
+}
+
+static bool openaudio(void) {
+  for (int i = 0; i < FM_CHAN_NUM; i++) {
+    fm_chan_reset(&g.fmchan[i].chan);
+  }
+
+  SDL_AudioSpec as = {0};
+  as.freq = 55467;
+  as.format = AUDIO_S16SYS;
+  as.channels = 1;
+  as.samples = 1024;
+  as.callback = audiocb;
+  SDL_AudioDeviceID ad = SDL_OpenAudioDevice(0, 0, &as, 0, 0);
+  if (!ad) return false;
+  
+  g.ad = ad;
+  return true;
 }
 
 static void cmvputchr(bool color, int y, int x, char c) {
@@ -143,59 +211,95 @@ static int getval(void) {
   } while (0)
 
 static void setval(int v) {
+  SDL_LockAudioDevice(g.ad);
   if (v < 0) v = 0;
   if (g.pos.y == 0) {
     if (g.pos.x == 1) {
       R(7);
       g.param.alg = v;
+      for (int i = 0; i < FM_CHAN_NUM; i++) {
+        fm_chan_set_alg(&g.fmchan[i].chan, v);
+      }
     }
     if (g.pos.x == 2) {
       R(7);
       g.param.fbl = v;
+      for (int i = 0; i < FM_CHAN_NUM; i++) {
+        fm_chan_set_fb(&g.fmchan[i].chan, v);
+      }
     }
   } else {
+    int slotnum = g.pos.y - 1;
     if (g.pos.x == 0) {
       R(31);
       g.param.slot[g.pos.y-1].ar = v;
+      for (int i = 0; i < FM_CHAN_NUM; i++) {
+        fm_slot_set_ar(&g.fmchan[i].chan.slot[slotnum], v);
+      }
     }
     if (g.pos.x == 1) {
       R(31);
       g.param.slot[g.pos.y-1].dr = v;
+      for (int i = 0; i < FM_CHAN_NUM; i++) {
+        fm_slot_set_dr(&g.fmchan[i].chan.slot[slotnum], v);
+      }
     }
     if (g.pos.x == 2) {
       R(31);
       g.param.slot[g.pos.y-1].sr = v;
+      for (int i = 0; i < FM_CHAN_NUM; i++) {
+        fm_slot_set_sr(&g.fmchan[i].chan.slot[slotnum], v);
+      }
     }
     if (g.pos.x == 3) {
       R(15);
       g.param.slot[g.pos.y-1].rr = v;
+      for (int i = 0; i < FM_CHAN_NUM; i++) {
+        fm_slot_set_rr(&g.fmchan[i].chan.slot[slotnum], v);
+      }
     }
     if (g.pos.x == 4) {
       R(15);
       g.param.slot[g.pos.y-1].sl = v;
+      for (int i = 0; i < FM_CHAN_NUM; i++) {
+        fm_slot_set_sl(&g.fmchan[i].chan.slot[slotnum], v);
+      }
     }
     if (g.pos.x == 5) {
       R(127);
       g.param.slot[g.pos.y-1].tl = v;
+      for (int i = 0; i < FM_CHAN_NUM; i++) {
+        fm_slot_set_tl(&g.fmchan[i].chan.slot[slotnum], v);
+      }
     }
     if (g.pos.x == 6) {
       R(3);
       g.param.slot[g.pos.y-1].ks = v;
+      for (int i = 0; i < FM_CHAN_NUM; i++) {
+        fm_slot_set_ks(&g.fmchan[i].chan.slot[slotnum], v);
+      }
     }
     if (g.pos.x == 7) {
       R(15);
       g.param.slot[g.pos.y-1].ml = v;
+      for (int i = 0; i < FM_CHAN_NUM; i++) {
+        fm_slot_set_mul(&g.fmchan[i].chan.slot[slotnum], v);
+      }
     }
     if (g.pos.x == 8) {
       R(7);
       g.param.slot[g.pos.y-1].dt = v;
+      for (int i = 0; i < FM_CHAN_NUM; i++) {
+        fm_slot_set_det(&g.fmchan[i].chan.slot[slotnum], v);
+      }
     }
   }
+  SDL_UnlockAudioDevice(g.ad);
 }
 
 #undef R
 
-static void parse(void) {
+static void parse_and_set(void) {
   int v = 0;
   if (g.inputbuf[0] != ' ') v += (g.inputbuf[0]-'0')*100;
   if (g.inputbuf[1] != ' ') v += (g.inputbuf[1]-'0')*10;
@@ -236,7 +340,7 @@ static void render(void) {
           cmvputchr(i == 2, 7+y, 6+4*x+i, g.inputbuf[i]);
         }
       } else {
-        int v;
+        int v = 0;
         if (x == 0) v = g.param.slot[y].ar;
         if (x == 1) v = g.param.slot[y].dr;
         if (x == 2) v = g.param.slot[y].sr;
@@ -253,7 +357,123 @@ static void render(void) {
   SDL_RenderPresent(g.renderer);
 }
 
+static int allocate_channel(SDL_Scancode scancode) {
+  for (int i = 0; i < FM_CHAN_NUM; i++) {
+    int index = (i + g.next_chan) % FM_CHAN_NUM;
+    if (g.fmchan[index].keyon) continue;
+    g.fmchan[index].keyon = true;
+    g.fmchan[index].scancode = scancode;
+    g.next_chan = (index+1) % FM_CHAN_NUM;
+    return index;
+  }
+  return -1;
+}
+
+static int search_channel(SDL_Scancode scancode) {
+  for (int i = 0; i < FM_CHAN_NUM; i++) {
+    if (!g.fmchan[i].keyon) continue;
+    if (g.fmchan[i].scancode != scancode) continue;
+    g.fmchan[i].keyon = false;
+    return i;
+  }
+  return -1;
+}
+
+static void handle_key_tone(const SDL_KeyboardEvent *ke) {
+  unsigned blk = 3;
+  unsigned fnum;
+  if (ke->keysym.mod & KMOD_SHIFT) blk++;
+  switch (ke->keysym.scancode) {
+  case SDL_SCANCODE_Q:
+    fnum = fnumtable_fmp[8];
+    blk--;
+    break;
+  case SDL_SCANCODE_A:
+    fnum = fnumtable_fmp[9];
+    blk--;
+    break;
+  case SDL_SCANCODE_W:
+    fnum = fnumtable_fmp[10];
+    blk--;
+    break;
+  case SDL_SCANCODE_S:
+    fnum = fnumtable_fmp[11];
+    blk--;
+    break;
+  case SDL_SCANCODE_D:
+    fnum = fnumtable_fmp[0];
+    break;
+  case SDL_SCANCODE_R:
+    fnum = fnumtable_fmp[1];
+    break;
+  case SDL_SCANCODE_F:
+    fnum = fnumtable_fmp[2];
+    break;
+  case SDL_SCANCODE_T:
+    fnum = fnumtable_fmp[3];
+    break;
+  case SDL_SCANCODE_G:
+    fnum = fnumtable_fmp[4];
+    break;
+  case SDL_SCANCODE_H:
+    fnum = fnumtable_fmp[5];
+    break;
+  case SDL_SCANCODE_U:
+    fnum = fnumtable_fmp[6];
+    break;
+  case SDL_SCANCODE_J:
+    fnum = fnumtable_fmp[7];
+    break;
+  case SDL_SCANCODE_I:
+    fnum = fnumtable_fmp[8];
+    break;
+  case SDL_SCANCODE_K:
+    fnum = fnumtable_fmp[9];
+    break;
+  case SDL_SCANCODE_O:
+    fnum = fnumtable_fmp[10];
+    break;
+  case SDL_SCANCODE_L:
+    fnum = fnumtable_fmp[11];
+    break;
+  case SDL_SCANCODE_SEMICOLON:
+    fnum = fnumtable_fmp[0];
+    blk++;
+    break;
+  case SDL_SCANCODE_LEFTBRACKET:
+    fnum = fnumtable_fmp[1];
+    blk++;
+    break;
+  case SDL_SCANCODE_APOSTROPHE:
+    fnum = fnumtable_fmp[2];
+    blk++;
+    break;
+  case SDL_SCANCODE_RIGHTBRACKET:
+    fnum = fnumtable_fmp[3];
+    blk++;
+    break;
+  default:
+    return;
+  }
+  // ignore key repeat
+  if (ke->repeat) return;
+  int chan;
+  bool keyon = (ke->state == SDL_PRESSED);
+  if (keyon) chan = allocate_channel(ke->keysym.scancode);
+  else chan = search_channel(ke->keysym.scancode);
+  if (chan == -1) return;
+  SDL_LockAudioDevice(g.ad);
+  if (keyon) {
+    fm_chan_set_blkfnum(&g.fmchan[chan].chan, blk, fnum);
+  }
+  for (int i = 0; i < 4; i++) {
+    fm_slot_key(&g.fmchan[chan].chan, i, keyon);
+  }
+  SDL_UnlockAudioDevice(g.ad);
+}
+
 static void handle_key(const SDL_KeyboardEvent *ke) {
+  handle_key_tone(ke);
   if (g.state == STATE_DEFAULT) {
     if (ke->state == SDL_PRESSED) {
       switch (ke->keysym.sym) {
@@ -357,7 +577,7 @@ static void handle_key(const SDL_KeyboardEvent *ke) {
       case SDLK_TAB:
       case SDLK_LEFT:
         g.state = STATE_DEFAULT;
-        parse();
+        parse_and_set();
         break;
       case SDLK_ESCAPE:
         g.state = STATE_DEFAULT;
@@ -448,7 +668,19 @@ int main(int argc, char **argv) {
   if (SDL_Init(SDL_INIT_VIDEO|SDL_INIT_AUDIO) != 0) {
     return 0;
   }
-
+  
+  puts(SDL_GetPrefPath("tak", "opnatest"));
+  
+  if (!openaudio()) {
+    SDL_ShowSimpleMessageBox(
+      SDL_MESSAGEBOX_ERROR,
+      "audio open error",
+      "Failed to open audio device.",
+      0
+    );
+    goto err_sdl;
+  }
+  SDL_PauseAudioDevice(g.ad, 0);
   g.mainwin = SDL_CreateWindow(
     "PMD Voice Editor",
     SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,

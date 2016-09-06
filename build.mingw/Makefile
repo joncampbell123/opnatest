@@ -3,7 +3,7 @@ vpath %.c ../src
 CC=i686-w64-mingw32-gcc
 
 TARGET=opnatest.exe
-OBJS=main.o
+OBJS=main.o opnafm.o
 
 SDLDIR=/home/tak/src/SDL2-2.0.4
 
