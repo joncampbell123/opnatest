@@ -1,7 +1,8 @@
-#include <SDL.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdarg.h>
+#include <SDL.h>
+#include <SDL_stdinc.h>
 #include "font.h"
 
 static struct {
@@ -10,6 +11,11 @@ static struct {
   SDL_Texture *fonttex;
   SDL_Texture *fonttex_neg;
   uint8_t fontbuf[8*16*(16*6)];
+  struct {
+    int x;
+    int y;
+  } pos;
+  SDL_RendererInfo ri;
 } g;
 
 static void conv_font_raw(void) {
@@ -80,7 +86,7 @@ void cmvprintr(bool color, int y, int x, const char *format, ...) {
   char buf[81] = {0};
   va_list args;
   va_start(args, format);
-  vsnprintf(buf, 81, format, args);
+  SDL_vsnprintf(buf, 81, format, args);
   va_end(args);
   cmvputsr(color, y, x, buf);
 }
@@ -88,6 +94,7 @@ void cmvprintr(bool color, int y, int x, const char *format, ...) {
 static void render() {
   SDL_RenderClear(g.renderer);
   cmvprintr(false, 0,  0, "[[[ PMD Voice Editor ver.0.1 ]]] / Programmed by T.Horikawa 2016.08.05");
+  cmvprintr(false, 1,  0, "Renderer: %s", g.ri.name);
   cmvprintr(false, 2,  0, "=================== Edit Area ===================  =========== Usage ===========");
   cmvprintr(false, 3,  0, "                                                   ---------");
   cmvprintr(false, 4,  0, "      NUM ALG FBL   Name: abcdefg     Octave: 000");
@@ -96,15 +103,20 @@ static void render() {
   for (int i = 0; i < 4; i++) {
     cmvprintr(false, 7+i, 0, "slot%d", i);
   }
-  for (int i = 0; i < 4; i++) {
-    for (int j = 0; j < 9; j++) {
-      cmvprintr(true, 7+i, 6+4*j, "%03d", i*9+j);
+  for (int x = 0; x < 3; x++) {
+    cmvprintr(false, 5, 6+4*x, "%03d", x);
+  }
+  for (int y = 0; y < 4; y++) {
+    for (int x = 0; x < 9; x++) {
+      cmvprintr(x == g.pos.x && y == g.pos.y, 7+y, 6+4*x, "%03d", y*9+x);
     }
   }
   SDL_RenderPresent(g.renderer);
 }
 
 int main(int argc, char **argv) {
+  (void)argc, (void)argv;
+  
   if (SDL_Init(SDL_INIT_VIDEO|SDL_INIT_AUDIO) != 0) {
     return 0;
   }
@@ -134,19 +146,7 @@ int main(int argc, char **argv) {
     );
     goto err_mainwin;
   }
-#if 1
-  {
-    SDL_RendererInfo i;
-    if (SDL_GetRendererInfo(g.renderer, &i) == 0) {
-      SDL_ShowSimpleMessageBox(
-        SDL_MESSAGEBOX_INFORMATION,
-        "RendererInfo",
-        i.name,
-        g.mainwin
-      );
-    }
-  }
-#endif
+  SDL_GetRendererInfo(g.renderer, &g.ri);
   conv_font_raw();
   if (!create_fonttex()) {
     SDL_ShowSimpleMessageBox(
@@ -169,6 +169,15 @@ int main(int argc, char **argv) {
     switch (e.type) {
     case SDL_QUIT:
       goto err_mainwin;
+    case SDL_KEYDOWN:
+      if (e.key.keysym.scancode == SDL_SCANCODE_ESCAPE) goto err_mainwin;
+      break;
+    case SDL_WINDOWEVENT:
+      switch (e.window.event) {
+      case SDL_WINDOWEVENT_EXPOSED:
+        render();
+        break;
+      }
     }
   }
   
@@ -178,4 +187,5 @@ err_mainwin:
   SDL_DestroyWindow(g.mainwin);
 err_sdl:
   SDL_Quit();
+  return 0;
 }

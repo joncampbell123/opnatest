@@ -1,3 +1,5 @@
+vpath %.c ../src
+
 TARGET=opnatest
 OBJS=main.o
 
