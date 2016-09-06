@@ -309,7 +309,7 @@ static void parse_and_set(void) {
 
 static void render(void) {
   SDL_RenderClear(g.renderer);
-  cmvprintr(false, 0,  0, "[[[ PMD Voice Editor ver.0.1 ]]] / Programmed by T.Horikawa 2016.08.05");
+  cmvprintr(false, 0,  0, "[[[ OPN Voice Editor ver.0.1 ]]]  2016.08.05");
   cmvprintr(false, 1,  0, "Renderer: %s", g.ri.name);
   cmvprintr(false, 2,  0, "=================== Edit Area ===================  =========== Usage ===========");
   cmvprintr(false, 3,  0, "                                                   ---------");
