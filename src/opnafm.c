@@ -60,6 +60,7 @@ void fm_opna_reset(struct fm_opna *opna) {
     opna->ch3.blk[i] = 0;
   }
 }
+#define LIBOPNA_ENABLE_HIRES
 // maximum output: 2042<<2 = 8168
 int16_t fm_slotout(struct fm_slot *slot, int16_t modulation) {
   unsigned pind = (slot->phase >> 10);

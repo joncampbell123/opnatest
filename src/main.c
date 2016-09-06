@@ -64,6 +64,7 @@ static struct {
     SDL_Scancode scancode;
   } fmchan[FM_CHAN_NUM];
   int next_chan;
+  int octave;
 } g;
 
 static void conv_font_raw(void) {
@@ -313,7 +314,7 @@ static void render(void) {
   cmvprintr(false, 1,  0, "Renderer: %s", g.ri.name);
   cmvprintr(false, 2,  0, "=================== Edit Area ===================  =========== Usage ===========");
   cmvprintr(false, 3,  0, "                                                   ---------");
-  cmvprintr(false, 4,  0, "      NUM ALG FBL   Name: abcdefg     Octave: 000");
+  cmvprintr(false, 4,  0, "      NUM ALG FBL   Name: abcdefg     Octave: %03d", g.octave);
   cmvprintr(false, 6,  0, "       AR  DR  SR  RR  SL  TL  KS  ML DT1 DT2 AME");
   cmvprintr(false, 13, 0, "=================== Push Area ===================");
   for (int i = 0; i < 4; i++) {
@@ -380,7 +381,7 @@ static int search_channel(SDL_Scancode scancode) {
 }
 
 static void handle_key_tone(const SDL_KeyboardEvent *ke) {
-  unsigned blk = 3;
+  int blk = g.octave;
   unsigned fnum;
   if (ke->keysym.mod & KMOD_SHIFT) blk++;
   switch (ke->keysym.scancode) {
@@ -462,6 +463,10 @@ static void handle_key_tone(const SDL_KeyboardEvent *ke) {
   if (keyon) chan = allocate_channel(ke->keysym.scancode);
   else chan = search_channel(ke->keysym.scancode);
   if (chan == -1) return;
+
+  if (blk < 0) blk = 0;
+  if (blk > 7) blk = 7;
+
   SDL_LockAudioDevice(g.ad);
   if (keyon) {
     fm_chan_set_blkfnum(&g.fmchan[chan].chan, blk, fnum);
@@ -656,6 +661,16 @@ static void handle_key(const SDL_KeyboardEvent *ke) {
       }
       render();
       return;
+    case SDLK_HOME:
+      g.octave++;
+      if (g.octave > 7) g.octave = 7;
+      render();
+      break;
+    case SDLK_END:
+      g.octave--;
+      if (g.octave < 0) g.octave = 0;
+      render();
+      break;
     default:
       break;
     }
@@ -664,7 +679,8 @@ static void handle_key(const SDL_KeyboardEvent *ke) {
 
 int main(int argc, char **argv) {
   (void)argc, (void)argv;
-  
+  g.octave = 4;
+
   if (SDL_Init(SDL_INIT_VIDEO|SDL_INIT_AUDIO) != 0) {
     return 0;
   }
@@ -682,7 +698,7 @@ int main(int argc, char **argv) {
   }
   SDL_PauseAudioDevice(g.ad, 0);
   g.mainwin = SDL_CreateWindow(
-    "PMD Voice Editor",
+    "OPN Voice Editor",
     SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
     640, 400,
     0
