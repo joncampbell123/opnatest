@@ -661,12 +661,12 @@ static void handle_key(const SDL_KeyboardEvent *ke) {
       }
       render();
       return;
-    case SDLK_HOME:
+    case SDLK_END:
       g.octave++;
       if (g.octave > 7) g.octave = 7;
       render();
       break;
-    case SDLK_END:
+    case SDLK_HOME:
       g.octave--;
       if (g.octave < 0) g.octave = 0;
       render();
