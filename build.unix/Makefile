@@ -4,9 +4,9 @@ TARGET=opnatest
 OBJS=main.o opnafm.o
 
 SDLCONFIG=sdl2-config
-CFLAGS=-Wall -Wextra -Og -g $(shell $(SDLCONFIG) --cflags)
+CFLAGS=-Wall -Wextra -O3 $(shell $(SDLCONFIG) --cflags)
 LDFLAGS=
-LIBS=$(shell $(SDLCONFIG) --libs)
+LIBS=$(shell $(SDLCONFIG) --static-libs)
 
 $(TARGET):	$(OBJS)
 	$(CC) -o $@ $(OBJS) $(LDFLAGS) $(LIBS)

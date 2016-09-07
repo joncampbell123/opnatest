@@ -492,6 +492,16 @@ static void handle_key(const SDL_KeyboardEvent *ke) {
       case SDLK_7:
       case SDLK_8:
       case SDLK_9:
+      case SDLK_KP_0:
+      case SDLK_KP_1:
+      case SDLK_KP_2:
+      case SDLK_KP_3:
+      case SDLK_KP_4:
+      case SDLK_KP_5:
+      case SDLK_KP_6:
+      case SDLK_KP_7:
+      case SDLK_KP_8:
+      case SDLK_KP_9:
         g.state = STATE_EDIT;
         g.inputbuf[0] = ' ';
         g.inputbuf[1] = ' ';
@@ -530,38 +540,58 @@ static void handle_key(const SDL_KeyboardEvent *ke) {
       case SDLK_7:
       case SDLK_8:
       case SDLK_9:
+      case SDLK_KP_0:
+      case SDLK_KP_1:
+      case SDLK_KP_2:
+      case SDLK_KP_3:
+      case SDLK_KP_4:
+      case SDLK_KP_5:
+      case SDLK_KP_6:
+      case SDLK_KP_7:
+      case SDLK_KP_8:
+      case SDLK_KP_9:
         if (g.inputbuf[0] == ' ') {
           g.inputbuf[0] = g.inputbuf[1];
           g.inputbuf[1] = g.inputbuf[2];
           switch (ke->keysym.sym) {
             case SDLK_0:
+            case SDLK_KP_0:
               g.inputbuf[2] = '0';
               break;
             case SDLK_1:
+            case SDLK_KP_1:
               g.inputbuf[2] = '1';
               break;
             case SDLK_2:
+            case SDLK_KP_2:
               g.inputbuf[2] = '2';
               break;
             case SDLK_3:
+            case SDLK_KP_3:
               g.inputbuf[2] = '3';
               break;
             case SDLK_4:
+            case SDLK_KP_4:
               g.inputbuf[2] = '4';
               break;
             case SDLK_5:
+            case SDLK_KP_5:
               g.inputbuf[2] = '5';
               break;
             case SDLK_6:
+            case SDLK_KP_6:
               g.inputbuf[2] = '6';
               break;
             case SDLK_7:
+            case SDLK_KP_7:
               g.inputbuf[2] = '7';
               break;
             case SDLK_8:
+            case SDLK_KP_8:
               g.inputbuf[2] = '8';
               break;
             case SDLK_9:
+            case SDLK_KP_9:
               g.inputbuf[2] = '9';
               break;
           }
@@ -577,6 +607,7 @@ static void handle_key(const SDL_KeyboardEvent *ke) {
       case SDLK_DOWN:
       case SDLK_RETURN:
       case SDLK_RETURN2:
+      case SDLK_KP_ENTER:
       case SDLK_UP:
       case SDLK_RIGHT:
       case SDLK_TAB:
@@ -600,6 +631,7 @@ static void handle_key(const SDL_KeyboardEvent *ke) {
       switch (sym) {
       case SDLK_RETURN:
       case SDLK_RETURN2:
+      case SDLK_KP_ENTER:
         sym = SDLK_UP;
         break;
       case SDLK_TAB:
@@ -614,6 +646,7 @@ static void handle_key(const SDL_KeyboardEvent *ke) {
     case SDLK_DOWN:
     case SDLK_RETURN:
     case SDLK_RETURN2:
+    case SDLK_KP_ENTER:
       g.pos.y++;
       if (g.pos.y > 4) g.pos.y = 4;
       render();
